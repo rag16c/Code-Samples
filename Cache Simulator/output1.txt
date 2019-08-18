@@ -1,0 +1,20 @@
+Block size: 4
+Number of sets: 16
+Associativity: 2
+Number of offset bits: 2 
+Number of index bits: 4
+Number of tag bits: 26
+****************************************
+Write-through with No Write Allocate
+****************************************
+Total number of references: 7
+Hits: 1
+Misses: 6
+Memory References: 7
+****************************************
+Write-back with Write Allocate
+****************************************
+Total number of references: 7
+Hits: 1
+Misses: 6
+Memory References: 7
