@@ -1,0 +1,396 @@
+/* 
+   ADD C++ FILE EXTENTION
+   Riley Garrison
+   October 4, 2019
+   Intro to Computer Networks Homework 2
+   This program is used to recover data from a signal,
+   as well as implements the (7,4) Hamming code to correct up to
+   one bit of error in every 7 bits received. 
+   
+   The input is a file that stores the signal and the output is the
+   decoded message from that signal.
+*/
+
+#include <iostream>
+#include <cmath>
+#include <string>
+
+using namespace std;
+
+double newMean(double oldMean,long amount,double newData);
+double newSD(double oldMean,long amount,double newData,long double y,double oldSD);  
+int* resizeArray(int* array,int size);
+int checkParity1(int code[]);
+int checkParity2(int code[]);
+int checkParity3(int code[]);
+
+int main() {
+
+  const int sampleTime = 2; // microseconds
+  const int symbolTime = sampleTime*100;  // microseconds
+  const int pulseTime = sampleTime*10; // microseconds
+  const int numberPreamble = 8; // Tells you how many preamble signals there are
+
+  // all these variables are relevant to finding mean and standard deviation
+  double meanP = 0; // previous mean
+  double mean = 0;  // current mean
+  double data = 0;  // data point
+  double sdP = 0;  // previous sd
+  double sd = 0;   // current sd
+  long n = 0;      // current number of data points
+  long double y = 0;  // sum all each data point squared
+
+  // Relevant to keeping track as data comes in
+  double threshold = 0;    // When to tell data from noise 
+  int countPreamble = 0;   // Counts preamble signals
+  int currentTime = 0;     // Counts the current time
+  double zeroLower = 0;    // Lower bound for zero bit
+  double zeroHigher = 0;   // Higher bound for zero bit
+  bool startPreamble = false;  // Has preamble started
+  bool startData = false;      // Has data started coming in
+  bool dataReceived = false;   // Have you already received data
+  int highestData = 0;     // Stores highest Data point reached over symbol
+  int waitTime = 0;        // Imposes a wait time after collecting bits to stop duplication
+ 
+  int bit = 0;       // Keeps track of which bit to add
+  int *bitsReceived; // Store the bit stream in here
+  bitsReceived = new int[1];  
+  int bRSize = 1;  // Size of the array
+  int numBits = 0; // Used to only add 21 bits per int in the array
+  int bitSeg1 = 0; // Stores first 4 bits of the byte
+  int bitSeg2 = 0; // Stores last 4 bits of byte
+  int count = 0;   // Counts
+  string byteStream;  // Stores the bytes obtained here
+  
+  int p1 = 0;   // Parity 1
+  int p2 = 0;   // Parity 2
+  int p3 = 0;   // Parity 3
+  int codeWord[7];  // Stores codeword
+
+  // Get data and set variables up
+  cin >> data;
+  mean = data;
+  sd = 0;
+  y = data*data;
+  n++;
+
+  // Uses first 10000 data points to set up mean
+  // and standard deviation for threshold
+  while ( n < 10000 ) {
+    cin >> data;
+    meanP = mean;
+    sdP = sd;
+
+    mean = newMean(meanP,n,data);
+    sd = newSD(meanP,n,data,y,sdP);
+    y = y + data*data;
+    n++;
+  }
+
+  // Threshold determined
+  threshold = mean*8+sd*16;
+
+  cin >> data;
+ 
+  // Reads rest of the samples
+  while ( !cin.eof() ) {
+    if ( data >= threshold ) {
+      if ( startData == false ) {
+	// If you shouldnt be reading data yet its the preamble
+	if ( startPreamble == false ) { 
+	  startPreamble = true;
+	  currentTime = 0;
+	}	
+
+	// Makes sure you dont take the same bit twice
+	if ( !dataReceived ) {
+	  dataReceived = true;
+	  countPreamble++;
+	  
+   	}
+      
+	// Goes through time now that signal started
+	currentTime = currentTime + sampleTime;
+	if ( currentTime == symbolTime )
+	  currentTime = 0;
+	
+	// If preamble over, you are collecting data now
+	if ( countPreamble == 8 ) {
+	  startPreamble = false;
+	  startData = true;
+
+	  zeroLower = -4;
+	  zeroHigher = 4;
+	}
+
+      }
+      else if ( startData == true ) {
+	// If you are collecting data
+	if ( !dataReceived && waitTime >= 20 ) {
+	  if ( highestData == -1 ) {
+	    // If this is the first data point 
+	    // take it without care
+	    highestData = data;
+	    waitTime = 0;
+	    // Prevents bit duplication
+	    dataReceived = true;
+	    // Decides what bit you are receiving
+	    if ( currentTime >= 0 && currentTime <= zeroHigher ) 
+	      bit = 0; 
+	    else if ( currentTime <= 200 && currentTime >= (200+zeroLower) ) 
+	      bit = 0;
+	    else 
+	      bit = 1;	   
+	    
+	    // Adds bit to int array
+	    bitsReceived[bRSize-1] = bitsReceived[bRSize-1]|((int)(pow(2,numBits)*bit));
+	    numBits++;
+	    
+	    // If 21 bits stores, expand array
+	    if ( numBits == 21 ) {
+	      bitsReceived = resizeArray(bitsReceived,bRSize);
+	      bRSize++;
+	      numBits = 0;
+	    }
+	  }
+	  else if (data < highestData) { 
+	    // If the data isn't higher and you've already read data
+	    // then you should disregard it
+	    // Usually disregard a 1 because 0 was stronger
+	  }
+	  else {
+	    // If data recieved is higher than when you last received data over symbol
+	    // replace last received data with this
+	    // aka replace last 0 with a 1
+	    waitTime = 0;
+	    // Prevents bit duplication
+	    dataReceived = true;
+	    bit = 1;	    	    
+	    
+	    // Which bit to replace
+	    if ( numBits != 0 )
+	      bitsReceived[bRSize-1] = bitsReceived[bRSize-1]|((int)(pow(2,numBits-1)*bit));
+	    else
+	      bitsReceived[bRSize-2] = bitsReceived[bRSize-2]|((int)(pow(2,21)*bit));
+	     
+	    // If 21 bits stores, expand array
+	  }
+	}  
+
+	// Go through time
+	if ( data > highestData )
+	  highestData = data;
+
+	waitTime+=sampleTime;
+	currentTime = currentTime + sampleTime;
+	if ( currentTime == symbolTime )
+	  currentTime = 0;
+
+      }
+    }
+    else if ( data < threshold && ( startData == true || startPreamble == true ) ) {
+      // If no more data, then just go through time
+      if ( dataReceived )
+		dataReceived = false;
+      
+      waitTime+=sampleTime;
+      currentTime = currentTime + sampleTime;
+      if ( currentTime == symbolTime ) { 
+		// reset stuff
+		highestData = -1;
+		currentTime = 0; 
+      }
+      
+    }
+
+    cin >> data;
+  }
+
+  // This is to create the bytes and store in the string
+  bit = 0;
+  count = 6;
+  for ( int i = 0; i < bRSize; i++ ) {
+    for ( int j = 0; j < 21; j++ ) {
+      // If there are no more bits left
+      if ( i == bRSize-1 && j > numBits )
+	break;
+
+      // Stores bit into codeWord until codeword is full
+      // which is when count = -1
+      if ( bitsReceived[i]&(int)pow(2,j) ) 
+	codeWord[6-count] = 1;
+      else
+	codeWord[6-count] = 0;
+      
+      count--;   
+
+      if ( count == -1 ) {
+	// When codeword is retrieved run this if
+	// Sets the parity bits whether they fail or pass
+	// 1 for fail, 0 for pass
+	p1 = checkParity1(codeWord);
+	p2 = checkParity2(codeWord);
+	p3 = checkParity3(codeWord);
+
+
+	// replaces a bit if it is bad
+	// all these if statements check for that
+	if ( (p1 + p2 + p3) == 1 ) {
+	  if ( p1 == 1 ) {
+	    if ( codeWord[4] == 0 )
+	      codeWord[4] = 1;
+	    else
+	      codeWord[4] = 0;
+	  }
+	  else if ( p2 == 1 ) {
+	    if ( codeWord[5] == 0 )
+	      codeWord[5] = 1;
+	    else
+	      codeWord[5] = 0;
+	  }
+	  else {
+	    if ( codeWord[6] == 0 )
+	      codeWord[6] = 1;
+	    else
+	      codeWord[6] = 0;   
+	  }
+	}
+	else if ( (p1 + p2 + p3 ) >= 2 ) {
+	  if ( (p1 + p2 + p3) == 3 ) {
+	    if ( codeWord[1] == 0 ) 
+	      codeWord[1] = 1;
+	    else
+	      codeWord[1] = 0;
+	  }
+	  else if ( (p1 + p2) == 2 ) {
+	    if ( codeWord[2] == 0 ) 
+	      codeWord[2] = 1;
+	    else
+	      codeWord[2] = 0;
+	  }
+	  else if ( (p1 + p3 ) == 2 ) {
+	    if ( codeWord[0] == 0 ) 
+	      codeWord[0] = 1;
+	    else
+	      codeWord[0] = 0;
+	  }
+	  else if ( (p2+p3) == 2 ) {
+	    if ( codeWord[3] == 0 ) 
+	      codeWord[3] = 1;
+	    else
+	      codeWord[3] = 0;
+	  }
+	}
+	
+	// Store first 4 bits in certain bitSeg
+	if ( bit == 0 ) {
+	  for ( int k = 0; k < 4; k++ ) {
+	    if ( codeWord[k] == 1 )
+	      bitSeg1 = bitSeg1|((int)pow(2,3-k));
+	  }
+	}
+	else {
+	  for ( int k = 0; k < 4; k++ ) {
+	    if ( codeWord[k] == 1 )
+	      bitSeg2 = bitSeg2|((int)pow(2,3-k));
+	  }
+	}
+        bit++;
+	count = 6;
+      }
+      
+      if ( bit == 2 ) {
+	// If 8 bits have been gathered change to byte and start over
+        bit = 0;
+	bitSeg1 = bitSeg1 << 4;
+	bitSeg1 = bitSeg1|bitSeg2;
+	byteStream.append(1,(char)bitSeg1);
+	bitSeg1 = 0;
+	bitSeg2 = 0;	
+      }
+    }
+  }
+  // Safety in case there are still bits left over
+  if ( bit != 0 ) {
+    bit = 0;
+    bitSeg1 = bitSeg1 << 4;
+    bitSeg1 = bitSeg1|bitSeg2;
+    byteStream.append(1,(char)bitSeg1);
+    bitSeg1 = 0;
+    bitSeg2 = 0;
+  }
+  // Prints byte stream
+  cout << byteStream << endl;
+
+  delete[] bitsReceived;
+
+  return 0;
+}
+
+// Calculates the new mean
+double newMean(double oldMean,long amount, double newData) {
+  double newMean;
+
+  newMean = amount*oldMean + newData;
+  newMean = newMean/(amount+1.0);
+
+  return newMean;
+}
+
+// Calculates the new Standard Deviation
+double newSD(double oldMean,long amount, double newData, long double y, double oldSD) {
+  long double temp;
+
+  temp = (2*amount+1)*y;
+  temp = temp - 2*oldMean*newData*(amount+amount*amount);
+  temp = temp + newData*newData*(amount+amount*amount);
+  temp = temp - amount*amount*oldMean*oldMean;
+  temp = temp + amount*amount*amount*oldSD*oldSD;
+  temp = temp/(amount+1.0);
+  temp = sqrt(temp);
+  temp = temp/(amount+1.0);
+
+  return temp;
+  
+}
+
+// Resizes an array to have 1 more spot
+int* resizeArray(int* array, int size) {
+  int* temp;
+  temp = new int[size+1];
+  
+  for ( int i = 0; i < size; i++ ) {
+    temp[i] = array[i];
+  }
+  temp[size] = 0;
+
+  delete[] array;
+
+  return temp;
+}
+
+// Checks against parity bit 1
+int checkParity1(int code[] ) {
+  if ( (code[0]+code[1]+code[2])%2 == code[4] )
+    return 0;
+  
+  return 1;
+}
+
+// Checks against parity bit 2
+int checkParity2(int code[] ) {
+  if ( (code[1]+code[2]+code[3])%2 == code[5] )
+    return 0;
+  
+  return 1;
+
+}
+
+// Checks against parity bit 3
+int checkParity3(int code[] ) {
+  if ( (code[0]+code[1]+code[3])%2 == code[6] )
+    return 0;
+  
+  return 1;
+  
+}
